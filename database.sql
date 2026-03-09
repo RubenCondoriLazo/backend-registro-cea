@@ -23,7 +23,10 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NOT NULL,
     role_id INT,
     carnet VARCHAR(20) NOT NULL UNIQUE,
+    rude_number VARCHAR(20) NULL UNIQUE,  -- Official Student Registry Number
     full_name VARCHAR(100) NOT NULL,
+    birth_date DATE,
+    gender ENUM('M', 'F', 'Otro'),
     area_type ENUM('Humanistica', 'Tecnica', 'Control') DEFAULT 'Control',
     FOREIGN KEY (role_id) REFERENCES roles(id)
 );

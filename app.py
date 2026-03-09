@@ -89,46 +89,54 @@ def post_grade():
     conn.close()
     return jsonify({'success': True, 'status': status})
 
-@app.route('/api/cea/report/<int:student_id>', methods=['GET'])
-def get_student_report(student_id):
+@app.route('/api/cea/grades', methods=['GET'])
+def get_all_grades():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    query = """
+        SELECT g.*, m.name as module_name, m.subject_id, m.level_id, u.full_name as student_name, u.rude_number
+        FROM grades g
+        JOIN modules m ON g.module_id = m.id
+        JOIN users u ON g.student_id = u.id
+    """
+    cursor.execute(query)
+    grades = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return jsonify(grades)
+
+@app.route('/api/cea/centralizador', methods=['GET'])
+def get_centralizador():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     
-    # 1. Get Student Enrollment
-    cursor.execute("SELECT area_id, level_id FROM enrollments WHERE student_id = %s", (student_id,))
-    enrollment = cursor.fetchone()
+    # Get all students with their formal info
+    cursor.execute("SELECT id, full_name, carnet, rude_number, gender, area_type FROM users WHERE role_id = 4")
+    students = cursor.fetchall()
     
-    # 2. Get Grades
-    query = """
-        SELECT g.*, m.name as module_name, m.subject_id, m.level_id, m.module_number
-        FROM grades g
-        JOIN modules m ON g.module_id = m.id
-        WHERE g.student_id = %s
-    """
-    cursor.execute(query, (student_id,))
-    grades = cursor.fetchall()
+    # Get all grades for aggregation
+    cursor.execute("""
+        SELECT student_id, module_id, score, status 
+        FROM grades
+    """)
+    all_grades = cursor.fetchall()
     
-    report = {
-        'grades': grades,
-        'certified': False,
-        'message': ''
-    }
-    
-    if enrollment:
-        if enrollment['area_id'] == 'Tecnica':
-            # Rule: 5 modules in a level must be >= 51
-            level_grades = [g for g in grades if g['level_id'] == enrollment['level_id']]
-            if len(level_grades) >= 5 and all(g['score'] >= 51 for g in level_grades):
-                report['certified'] = True
-                report['message'] = "Certificación Técnica Lista"
-            else:
-                report['message'] = "Debe aprobar todos los módulos para titularse"
+    # Organize report
+    report = []
+    for s in students:
+        s_grades = [g for g in all_grades if g['student_id'] == s['id']]
+        avg_score = sum(g['score'] for g in s_grades) / len(s_grades) if s_grades else 0
+        report.append({
+            'rude': s['rude_number'],
+            'name': s['full_name'],
+            'carnet': s['carnet'],
+            'gender': s['gender'],
+            'area': s['area_type'],
+            'average': round(avg_score, 2),
+            'modules_passed': len([g for g in s_grades if g['status'] == 'APROBADO']),
+            'total_modules': len(s_grades)
+        })
         
-        elif enrollment['area_id'] == 'Humanistica':
-            # Logic for subjects (2 modules each)
-            # This would need a loop over subjects to check averages
-            report['message'] = "Promedio humanístico en proceso"
-            
     cursor.close()
     conn.close()
     return jsonify(report)
